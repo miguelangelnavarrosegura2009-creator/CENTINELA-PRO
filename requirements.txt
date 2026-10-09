@@ -5,3 +5,4 @@ pandas
 feedparser
 beautifulsoup4
 python-telegram-bot
+yfinance
