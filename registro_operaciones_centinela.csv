@@ -1,0 +1,5 @@
+Fecha_Hora,Ticker,Nombre_Empresa,Perfil_Dinamica,Precio_Entrada,Take_Profit,Stop_Loss,Ratio_RR,Pct_TP,Pct_SL,Soporte,Score,Estado,Precio_Salida,Rendimiento_Pct
+2026-10-08 10:31:35,GE,GE Aerospace,⚡ ALTA DINÁMICA / MOVIMIENTO RÁPIDO,300.93,324.66,289.07,2.0:1,+7.9%,-3.9%,Banda Bollinger Inferior,83.0,ABIERTA,,
+2026-10-08 10:31:37,KO,The Coca-Cola Company,🐢 DEFENSIVA / MOVIMIENTO MODERADO,86.8,90.48,84.96,2.0:1,+4.2%,-2.1%,Banda Bollinger Inferior,30.5,ABIERTA,,
+2026-10-08 10:31:39,DIS,The Walt Disney Company,🐢 DEFENSIVA / MOVIMIENTO MODERADO,105.56,111.79,102.44,2.0:1,+5.9%,-3.0%,EMA 50 diaria,28.2,ABIERTA,,
+2026-10-08 10:36:16,GE,GE Aerospace,⚡ ALTA DINÁMICA / MOVIMIENTO RÁPIDO,300.78,324.51,288.92,2.0:1,+7.9%,-3.9%,Banda Bollinger Inferior,83.2,ABIERTA,,
