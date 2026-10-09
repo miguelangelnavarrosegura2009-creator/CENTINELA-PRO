@@ -2,6 +2,7 @@ fastapi
 uvicorn
 requests
 pandas
+pandas_ta
 feedparser
 beautifulsoup4
 python-telegram-bot
