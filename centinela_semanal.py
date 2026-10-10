@@ -156,15 +156,15 @@ def evaluar_activo_crypto(par_info: dict):
     rsi = ind["rsi"]
     atr = ind["atr"]
 
-    # Criterio: Pullback saludable en tendencia o consolidación con rebote en RSI (34 a 52)
-    if not (34 <= rsi <= 52):
-        return None, f"RSI fuera de zona de entrada ({rsi})"
+    # Criterio: Pullback saludable en tendencia o consolidación con rebote en RSI (30 a 62)
+    if not (30 <= rsi <= 62):
+     return None, f"RSI fuera de zona ({rsi})"
 
     # Corrección desde el máximo reciente
     max_reciente = df["high"].tail(20).max()
     descuento = round(((max_reciente - precio) / max_reciente) * 100, 1) if max_reciente > 0 else 0
 
-    if descuento < 4.0:
+    if descuento < 2.0:
         return None, f"Descuento insuficiente ({descuento}%)"
 
     # Definir Take-Profit y Stop-Loss (Ratio 2:1 con ATR)
