@@ -1,16 +1,17 @@
 import os
+import json
 import pandas as pd
+from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import centinela_semanal as bot
 
 app = FastAPI(
     title="Centinela Trading API",
-    description="Backend oficial para alimentar la app Android de Centinela",
-    version="1.0.0"
+    description="Backend oficial con soporte de historial y auditoría técnica",
+    version="1.2.0"
 )
 
-# Permite que la app móvil se conecte sin bloqueos de red
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,22 +20,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+HISTORIAL_PERSISTENTE = "historial_entradas_app.json"
+
+def cargar_historial():
+    if os.path.exists(HISTORIAL_PERSISTENTE):
+        try:
+            with open(HISTORIAL_PERSISTENTE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+def guardar_historial(lista):
+    with open(HISTORIAL_PERSISTENTE, "w", encoding="utf-8") as f:
+        json.dump(lista, f, indent=4, ensure_ascii=False)
+
 @app.get("/")
 def estado_servidor():
-    """Ruta de prueba de conexión."""
     return {
         "status": "online",
         "servicio": "Centinela Stock Engine",
-        "version": "1.0.0"
+        "version": "1.2.0"
     }
 
 @app.get("/mercado")
 def estado_mercado():
-    """Devuelve el sentimiento de mercado y el régimen del S&P 500."""
     sentimiento = bot.obtener_sentimiento_mercado()
     macro_ok, detalle_macro = bot.evaluar_regimen_mercado()
     winrate = bot.calcular_winrate_excel()
-    
+
     return {
         "sentimiento_fear_greed": sentimiento,
         "macro_favorable": macro_ok,
@@ -44,54 +58,44 @@ def estado_mercado():
 
 @app.get("/entradas")
 def obtener_entradas_activas():
-    """Devuelve las mejores 4 entradas calculadas para mostrar en la app."""
+    """
+    Escanea el mercado. Si encuentra nuevas entradas aprobadas, las agrega
+    al historial persistente para que nunca se pierdan ni se repitan.
+    """
+    historial = cargar_historial()
+    tickers_registrados = {item["ticker"] for item in historial}
+
     candidatas = []
     for ticker, meta in bot.WATCHLIST_EXPANDIDA.items():
         datos, motivo = bot.evaluar_tecnico_historico(ticker, meta)
         if datos:
-            info_b = bot.obtener_info_mapeo_binance(ticker, meta["token"])
-            datos["token_symbol"] = meta["token"]
+            info_b = bot.obtener_info_mapeo_binance(ticker, meta.get("token", ticker))
+            datos["token_symbol"] = meta.get("token", ticker)
             datos["par_binance"] = info_b.get("par_binance")
+            datos["fecha_deteccion"] = datetime.now().strftime("%d/%m/%Y %I:%M %p")
+            datos.pop("stock_obj", None)
             candidatas.append(datos)
 
-    if not candidatas:
-        return {"total": 0, "entradas": []}
-
-    candidatas.sort(key=lambda x: x["score_tecnico"], reverse=True)
-    mejores_4 = candidatas[:bot.MAX_ENTRADAS_SEMANA]
-
-    # Limpiar objetos no serializables si existieran
-    for item in mejores_4:
-        item.pop("stock_obj", None)
+    if candidatas:
+        candidatas.sort(key=lambda x: x.get("score_tecnico", 0), reverse=True)
+        # Añadir al historial solo las nuevas que no estuvieran ya registradas
+        for nueva in candidatas[:bot.MAX_ENTRADAS_SEMANA]:
+            if nueva["ticker"] not in tickers_registrados:
+                historial.insert(0, nueva)
+                tickers_registrados.add(nueva["ticker"])
+        
+        # Mantener las últimas 50 entradas históricas
+        historial = historial[:50]
+        guardar_historial(historial)
 
     return {
-        "total": len(mejores_4),
-        "entradas": mejores_4
-    }
-
-@app.get("/analizar/{ticker}")
-def auditar_activo_especifico(ticker: str):
-    """Permite a la app móvil auditar cualquier acción bajo demanda."""
-    ticker_clean = ticker.upper().strip()
-    meta = bot.WATCHLIST_EXPANDIDA.get(ticker_clean, {"nombre": ticker_clean, "token": f"{ticker_clean}B", "perfil_esperado": "RAPIDA"})
-    
-    datos, motivo = bot.evaluar_tecnico_historico(ticker_clean, meta)
-    if not datos:
-        return {
-            "aprobada": False,
-            "ticker": ticker_clean,
-            "motivo_descarte": motivo
-        }
-
-    datos.pop("stock_obj", None)
-    return {
-        "aprobada": True,
-        "detalles": datos
+        "total": len(historial),
+        "entradas": historial
     }
 
 @app.get("/historial")
 def ver_historial_operaciones():
-    """Lee el archivo CSV/Excel y devuelve las operaciones registradas a la app."""
+    """Devuelve el historial del archivo CSV/Excel de operaciones."""
     if not os.path.exists(bot.ARCHIVO_EXCEL):
         return {"operaciones": []}
     try:
