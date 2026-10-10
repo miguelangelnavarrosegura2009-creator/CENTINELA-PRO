@@ -8,7 +8,7 @@ import centinela_semanal as bot
 
 app = FastAPI(
     title="Centinela Trading API",
-    description="Backend oficial con soporte de historial y auditoría técnica",
+    description="Backend oficial con soporte de historial, actualización OTA y fichas de Telegram",
     version="1.2.0"
 )
 
@@ -20,27 +20,41 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-HISTORIAL_PERSISTENTE = "historial_entradas_app.json"
+HISTORIAL_FILE = "historial_entradas_app.json"
+VERSION_ACTUAL = "1.0.1"
+URL_DESCARGA_DIRECTA = "https://github.com/miguelangelnavarrosegura2009-creator/CENTINELA-PRO/releases/latest"
 
 def cargar_historial():
-    if os.path.exists(HISTORIAL_PERSISTENTE):
+    if os.path.exists(HISTORIAL_FILE):
         try:
-            with open(HISTORIAL_PERSISTENTE, "r", encoding="utf-8") as f:
+            with open(HISTORIAL_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return []
     return []
 
-def guardar_historial(lista):
-    with open(HISTORIAL_PERSISTENTE, "w", encoding="utf-8") as f:
-        json.dump(lista, f, indent=4, ensure_ascii=False)
+def guardar_historial(entradas):
+    try:
+        with open(HISTORIAL_FILE, "w", encoding="utf-8") as f:
+            json.dump(entradas, f, indent=4, ensure_ascii=False)
+    except Exception as e:
+        print(f"Error guardando historial: {e}")
 
 @app.get("/")
 def estado_servidor():
     return {
         "status": "online",
         "servicio": "Centinela Stock Engine",
-        "version": "1.2.0"
+        "version": VERSION_ACTUAL
+    }
+
+@app.get("/version")
+def consultar_version():
+    """Ruta para actualización automática de la aplicación."""
+    return {
+        "version": VERSION_ACTUAL,
+        "url_descarga": URL_DESCARGA_DIRECTA,
+        "novedades": "Fichas técnicas idénticas a Telegram e historial de acciones persistente."
     }
 
 @app.get("/mercado")
@@ -59,34 +73,39 @@ def estado_mercado():
 @app.get("/entradas")
 def obtener_entradas_activas():
     """
-    Escanea el mercado. Si encuentra nuevas entradas aprobadas, las agrega
-    al historial persistente para que nunca se pierdan ni se repitan.
+    Escanea la watchlist, genera la ficha completa tipo Telegram y
+    almacena en historial persistente sin duplicar tickers.
     """
     historial = cargar_historial()
-    tickers_registrados = {item["ticker"] for item in historial}
+    tickers_en_historial = {item.get("ticker") for item in historial}
 
     candidatas = []
     for ticker, meta in bot.WATCHLIST_EXPANDIDA.items():
-        datos, motivo = bot.evaluar_tecnico_historico(ticker, meta)
-        if datos:
-            info_b = bot.obtener_info_mapeo_binance(ticker, meta.get("token", ticker))
-            datos["token_symbol"] = meta.get("token", ticker)
-            datos["par_binance"] = info_b.get("par_binance")
-            datos["fecha_deteccion"] = datetime.now().strftime("%d/%m/%Y %I:%M %p")
-            datos.pop("stock_obj", None)
-            candidatas.append(datos)
+        try:
+            datos, motivo = bot.evaluar_tecnico_historico(ticker, meta)
+            if datos:
+                info_b = bot.obtener_info_mapeo_binance(ticker, meta.get("token", ticker))
+                datos["token_symbol"] = meta.get("token", ticker)
+                datos["par_binance"] = info_b.get("par_binance")
+                datos["fecha_deteccion"] = datetime.now().strftime("%d/%m/%Y %I:%M %p")
+                datos.pop("stock_obj", None)
+                candidatas.append(datos)
+        except Exception as e:
+            print(f"Error analizando {ticker}: {e}")
 
+    # Ordenar y agregar las mejores al historial evitando duplicados
     if candidatas:
         candidatas.sort(key=lambda x: x.get("score_tecnico", 0), reverse=True)
-        # Añadir al historial solo las nuevas que no estuvieran ya registradas
-        for nueva in candidatas[:bot.MAX_ENTRADAS_SEMANA]:
-            if nueva["ticker"] not in tickers_registrados:
-                historial.insert(0, nueva)
-                tickers_registrados.add(nueva["ticker"])
+        nuevas = 0
+        for candidata in candidatas[:bot.MAX_ENTRADAS_SEMANA]:
+            if candidata["ticker"] not in tickers_en_historial:
+                historial.insert(0, candidata)
+                tickers_en_historial.add(candidata["ticker"])
+                nuevas += 1
         
-        # Mantener las últimas 50 entradas históricas
-        historial = historial[:50]
-        guardar_historial(historial)
+        if nuevas > 0:
+            historial = historial[:50]  # Conservar las últimas 50
+            guardar_historial(historial)
 
     return {
         "total": len(historial),
@@ -95,7 +114,6 @@ def obtener_entradas_activas():
 
 @app.get("/historial")
 def ver_historial_operaciones():
-    """Devuelve el historial del archivo CSV/Excel de operaciones."""
     if not os.path.exists(bot.ARCHIVO_EXCEL):
         return {"operaciones": []}
     try:
