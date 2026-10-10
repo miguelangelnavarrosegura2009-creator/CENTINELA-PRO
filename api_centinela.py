@@ -63,7 +63,7 @@ def descargar_apk():
 @app.get("/version")
 def consultar_version():
     return {
-        "version": "1.0.1",
+        "version": "1.0.2",
         "url_descarga": "https://centinela-pro-dopr.onrender.com/descargar-apk",
         "novedades": "Fichas tecnicas completas e historial persistente."
     }
