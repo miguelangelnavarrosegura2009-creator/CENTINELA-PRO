@@ -3,6 +3,7 @@ import json
 import pandas as pd
 from datetime import datetime
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import centinela_semanal as bot
 
@@ -48,13 +49,23 @@ def estado_servidor():
         "version": VERSION_ACTUAL
     }
 
+@app.get("/descargar-apk")
+def descargar_apk():
+    ruta_apk = "app-release.apk"
+    if os.path.exists(ruta_apk):
+        return FileResponse(
+            ruta_apk,
+            filename="CentinelaPro.apk",
+            media_type="application/vnd.android.package-archive"
+        )
+    raise HTTPException(status_code=404, detail="Archivo APK no encontrado en el servidor")
+
 @app.get("/version")
 def consultar_version():
-    """Ruta para actualización automática directa."""
     return {
         "version": "1.0.1",
-        "url_descarga": "https://github.com/miguelangelnavarrosegura2009-creator/CENTINELA-PRO/releases/latest/download/app-release.apk",
-        "novedades": "Historial persistente y tarjetas técnicas completas."
+        "url_descarga": "https://centinela-pro-dopr.onrender.com/descargar-apk",
+        "novedades": "Fichas tecnicas completas e historial persistente."
     }
 
 @app.get("/mercado")
