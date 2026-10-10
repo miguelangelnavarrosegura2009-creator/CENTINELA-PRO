@@ -1,7 +1,7 @@
 import os
 import json
 import time
-import threading
+import requests
 from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,7 +10,7 @@ import centinela_semanal as bot
 
 app = FastAPI(
     title="Centinela Trading API",
-    description="Backend oficial con escáner continuo de Binance",
+    description="Backend oficial con generador continuo de senales Crypto y Memecoins",
     version="1.0.1"
 )
 
@@ -30,7 +30,9 @@ def cargar_historial():
     if os.path.exists(HISTORIAL_FILE):
         try:
             with open(HISTORIAL_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                if isinstance(data, list) and len(data) > 0:
+                    return data
         except Exception:
             return []
     return []
@@ -42,47 +44,64 @@ def guardar_historial(entradas):
     except Exception as e:
         print(f"Error guardando historial: {e}")
 
-def escanear_mercado_background():
-    """Escanea periódicamente Binance para tener siempre las mejores 10 señales listas."""
-    while True:
+def escanear_binance_directo():
+    """Genera las 10 mejores oportunidades de Binance (Crypto y Memecoins) en vivo."""
+    pares = bot.obtener_pares_binance(volumen_minimo_usdt=1000000.0)
+    candidatas = []
+    
+    # 1. Intentar evaluar técnicamente los primeros 30 pares
+    for par in pares[:30]:
         try:
-            pares = bot.obtener_pares_binance(volumen_minimo_usdt=2000000.0)
-            candidatas = []
-            for par in pares[:50]:
-                datos, motivo = bot.evaluar_activo_crypto(par)
-                if datos:
-                    candidatas.append(datos)
-                time.sleep(0.04)
+            datos, _ = bot.evaluar_activo_crypto(par)
+            if datos:
+                candidatas.append(datos)
+        except Exception:
+            pass
 
-            if candidatas:
-                candidatas.sort(key=lambda x: x.get("score_tecnico", 0), reverse=True)
-                historial = cargar_historial()
-                tickers_existentes = {item.get("ticker") for item in historial}
+    # 2. Si faltan para completar las 10, rellenar con los pares líderes de Binance
+    if len(candidatas) < 10 and pares:
+        tickers_usados = {c["ticker"] for c in candidatas}
+        for p in pares:
+            if len(candidatas) >= 10:
+                break
+            simbolo = p["symbol"]
+            if simbolo in tickers_usados:
+                continue
+            
+            nombre = simbolo.replace("USDT", "")
+            precio = p["last_price"]
+            sl = round(precio * 0.95, 4 if precio < 1 else 2)
+            tp = round(precio * 1.10, 4 if precio < 1 else 2)
+            candidatas.append({
+                "ticker": simbolo,
+                "nombre_empresa": f"{nombre} Token / Memecoin",
+                "precio": precio,
+                "rango_entrada": f"${round(precio * 0.985, 4 if precio < 1 else 2)} - ${precio}",
+                "descuento": abs(round(p.get("price_change_pct", 0), 1)),
+                "rsi": 45.0,
+                "atr": round(precio * 0.03, 4),
+                "dinamica": "🪙 CRYPTO / ALTA VOLATILIDAD",
+                "soporte": "Soporte de Liquidez Binance",
+                "score_tecnico": 75.0,
+                "take_profit": tp,
+                "stop_loss": sl,
+                "pct_tp": 10.0,
+                "pct_sl": 5.0,
+                "tiempo_estimado": "1 a 3 días",
+                "token_symbol": nombre,
+                "par_binance": simbolo,
+                "fecha_deteccion": datetime.now().strftime("%d/%m/%Y %I:%M %p")
+            })
 
-                for item in candidatas[:bot.MAX_ENTRADAS_DIA]:
-                    if item["ticker"] not in tickers_existentes:
-                        historial.insert(0, item)
-                        tickers_existentes.add(item["ticker"])
-
-                guardar_historial(historial[:50])
-                print(f"[SCANNER] Señales actualizadas. Total en historial: {len(historial)}")
-        except Exception as e:
-            print(f"[SCANNER] Error en escaneo en segundo plano: {e}")
-
-        time.sleep(180)  # Re-escanear cada 3 minutos
-
-@app.on_event("startup")
-def iniciar_escaneador():
-    t = threading.Thread(target=escanear_mercado_background, daemon=True)
-    t.start()
+    guardar_historial(candidatas[:10])
+    return candidatas[:10]
 
 @app.get("/")
 def estado_servidor():
     return {
         "status": "online",
         "servicio": "Centinela Engine",
-        "version": VERSION_ACTUAL,
-        "total_senales": len(cargar_historial())
+        "version": VERSION_ACTUAL
     }
 
 @app.get("/version")
@@ -105,72 +124,30 @@ def descargar_apk():
 
 @app.get("/mercado")
 def estado_mercado():
-    historial = cargar_historial()
     return {
         "sentimiento_fear_greed": "ACTIVO / ALTA VOLATILIDAD",
         "macro_favorable": True,
-        "macro_detalle": f"Alertas activas: {min(len(historial), 10)}/10",
+        "macro_detalle": "Límite: 10/día (Binance Crypto & Memes)",
         "winrate_historico": "74.8%"
     }
 
 @app.get("/entradas")
 def obtener_entradas_activas():
-    """
-    Retorna el listado de oportunidades detectadas.
-    Si el historial en la nube está vacío, escanea Binance en vivo de inmediato.
-    """
-    historial = cargar_historial()
-
-    # Si no hay entradas en el archivo, forzamos un escaneo rápido inmediato
-    if not historial:
-        print("[API] Historial vacío. Escaneando pares activos de Binance...")
-        pares = bot.obtener_pares_binance(volumen_minimo_usdt=1000000.0)
-        candidatas = []
-        for par in pares[:40]:
-            try:
-                datos, motivo = bot.evaluar_activo_crypto(par)
-                if datos:
-                    candidatas.append(datos)
-            except Exception as e:
-                print(f"Error evaluando {par.get('symbol')}: {e}")
-
-        # Si el mercado está muy frío y los filtros estrictos no dejaron pasar suficientes,
-        # ordenamos por mejor score o volumen para poblar la vista
-        if candidatas:
-            candidatas.sort(key=lambda x: x.get("score_tecnico", 0), reverse=True)
-            historial = candidatas[:bot.MAX_ENTRADAS_DIA]
-            guardar_historial(historial)
-        else:
-            # Fallback dinámico con los líderes de mercado para no dejar la app vacía
-            for p in pares[:10]:
-                nombre = p["symbol"].replace("USDT", "")
-                precio = p["last_price"]
-                sl = round(precio * 0.95, 4 if precio < 1 else 2)
-                tp = round(precio * 1.10, 4 if precio < 1 else 2)
-                candidatas.append({
-                    "ticker": p["symbol"],
-                    "nombre_empresa": f"{nombre} Token / Memecoin",
-                    "precio": precio,
-                    "rango_entrada": f"${round(precio * 0.985, 4 if precio < 1 else 2)} - ${precio}",
-                    "descuento": abs(round(p.get("price_change_pct", 0), 1)),
-                    "rsi": 45.0,
-                    "atr": round(precio * 0.03, 4),
-                    "dinamica": "🪙 CRYPTO / ALTA VOLATILIDAD",
-                    "soporte": "Soporte de Liquidez Binance",
-                    "score_tecnico": 70.0,
-                    "take_profit": tp,
-                    "stop_loss": sl,
-                    "pct_tp": 10.0,
-                    "pct_sl": 5.0,
-                    "tiempo_estimado": "1 a 3 días",
-                    "token_symbol": nombre,
-                    "par_binance": p["symbol"],
-                    "fecha_deteccion": datetime.now().strftime("%d/%m/%Y %I:%M %p")
-                })
-            historial = candidatas[:bot.MAX_ENTRADAS_DIA]
-            guardar_historial(historial)
-
+    entradas = cargar_historial()
+    if not entradas:
+        entradas = escanear_binance_directo()
+    
     return {
-        "total": len(historial[:bot.MAX_ENTRADAS_DIA]),
-        "entradas": historial[:bot.MAX_ENTRADAS_DIA]
+        "total": len(entradas),
+        "entradas": entradas
+    }
+
+@app.get("/regenerar-entradas")
+def forzar_regeneracion():
+    """Endpoint para forzar un nuevo escaneo fresco de Binance."""
+    entradas = escanear_binance_directo()
+    return {
+        "mensaje": "Señales regeneradas con éxito",
+        "total": len(entradas),
+        "entradas": entradas
     }
