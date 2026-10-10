@@ -35,7 +35,7 @@ def cargar_historial():
 
 def guardar_historial(entradas):
     try:
-        with open(HISTORIAL_FILE, "w", encoding="utf-8") as f:
+        with open(HIST/versionORIAL_FILE, "w", encoding="utf-8") as f:
             json.dump(entradas, f, indent=4, ensure_ascii=False)
     except Exception as e:
         print(f"Error guardando historial: {e}")
@@ -50,11 +50,11 @@ def estado_servidor():
 
 @app.get("/version")
 def consultar_version():
-    """Ruta para actualización automática de la aplicación."""
+    """Ruta para actualización automática directa."""
     return {
-        "version": VERSION_ACTUAL,
-        "url_descarga": URL_DESCARGA_DIRECTA,
-        "novedades": "Fichas técnicas idénticas a Telegram e historial de acciones persistente."
+        "version": "1.0.1",
+        "url_descarga": "https://github.com/miguelangelnavarrosegura2009-creator/CENTINELA-PRO/releases/latest/download/app-release.apk",
+        "novedades": "Historial persistente y tarjetas técnicas completas."
     }
 
 @app.get("/mercado")
